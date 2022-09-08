@@ -48,28 +48,45 @@ function Log {
     Write-Host $string
 }
 
-
-$subscriptions = Get-ChildItem -Path HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions | select Name
+try {
+	$subscriptions = Get-ChildItem -Path HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions -ErrorAction Stop | select Name
+} catch {
+	Log "Error getting subscriptions: $($_)"
+}
 
 foreach ($sub in $subscriptions) {
     $sub = $sub."Name".split('\')[7]
-    $eventsources = Get-childItem -Path HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions\$sub\EventSources | select name
+	try {
+		$eventsources = Get-childItem -Path HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\EventCollector\Subscriptions\$sub\EventSources -ErrorAction Stop | select name
+	} catch {
+		Log "Error getting event sources for $($sub): $($_)"
+	}
     Log "Checking $($eventsources.count) event sources"
 
     foreach ($source in $eventsources) {
         $source = ($source."Name" -split '\\',2)[1]
-        $regkey = Get-ItemProperty -Path HKLM:$source
+		try {
+			$regkey = Get-ItemProperty -Path HKLM:$source -ErrorAction Stop
+		} catch {
+			Log "Error getting regkey for $($source): $($_)"
+		}
         foreach ($reg in $regkey) {
             $LastHeartBeatTime = $reg.LastHeartBeatTime
             $date = [DateTime]::FromFileTime($LastHeartBeatTime)
             $today = Get-Date
             $timediff = New-Timespan -Start $date -End $today
             if ($timediff.Days -gt 30) {
-                $wefclient = $reg.PSChildName
-                Log "$wefclient has not checked in 30 days."
-                Log "Removing $wefclient from $sub subscription.`n"
-                Remove-Item $reg.PSPath -Force -Recurse
+				try {
+					$wefclient = $reg.PSChildName
+					Log "$wefclient has not checked in 30 days."
+					Log "Removing $wefclient from $sub subscription."
+					Remove-Item $reg.PSPath -Force -Recurse -ErrorAction Stop
+				} catch {
+					Log "Error removing $($wefclient) from $($sub) subscription: $($_)"
+				}
             }
         }
     }
 }
+
+Log "Completed Run"
